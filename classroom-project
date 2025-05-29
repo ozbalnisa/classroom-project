@@ -1,0 +1,415 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Windows.Forms;
+using System.Data.SQLite;
+
+namespace Classroom
+{
+    public partial class Form1 : Form
+    {
+        string connectionString = "Data Source=C:\\Users\\Nisa\\OneDrive\\Masaüstü\\Classroom.db;Version=3;";
+
+        public Form1()
+        {
+            InitializeComponent();
+        }
+        private void TestSQLiteConnection()
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+                MessageBox.Show("Veritabanına bağlandı!");
+            }
+        }
+        private void ıdText_TextChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            TestSQLiteConnection();
+            CreateCourseTableIfNotExists();
+            CreateStudentTableIfNotExists();
+            CreateEnrollmentTableIfNotExists();
+
+            LoadDepartments();
+            LoadCourses();
+            LoadCoursesToGrid();
+            LoadStudents();
+            LoadEnrollments();
+        }
+        private void LoadDepartments()
+        {
+            List<string> departments = new List<string>
+    {
+                "Computer Engineering",
+                "Electrical and Electronics Engineering",
+                "Mechanical Engineering",
+                "Industrial Engineering",
+                "Civil Engineering"
+    };
+
+            departmentBox.DataSource = departments;
+        }
+        private void CreateCourseTableIfNotExists()
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+
+                string createTableQuery = @"
+        CREATE TABLE IF NOT EXISTS Course (
+            CourseID INTEGER PRIMARY KEY AUTOINCREMENT,
+            CourseTitle TEXT NOT NULL
+        )";
+
+                SQLiteCommand cmd = new SQLiteCommand(createTableQuery, conn);
+                cmd.ExecuteNonQuery();
+
+                conn.Close();
+            }
+        }
+
+        private void CreateStudentTableIfNotExists()
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+
+                string createTableQuery = @"
+                CREATE TABLE IF NOT EXISTS Student (
+                    StudentID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    StudentNumber TEXT NOT NULL,
+                    Name TEXT NOT NULL,
+                    Surname TEXT NOT NULL,
+                    Email TEXT,
+                    Department TEXT,
+                    Grade TEXT
+                )";
+
+                SQLiteCommand cmd = new SQLiteCommand(createTableQuery, conn);
+                cmd.ExecuteNonQuery();
+
+                conn.Close();
+            }
+        }
+
+        private void CreateEnrollmentTableIfNotExists()
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+
+                string createTableQuery = @"
+                CREATE TABLE IF NOT EXISTS Enrollment (
+                    EnrollmentID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    StudentID INTEGER,
+                    CourseID INTEGER,
+                    FOREIGN KEY (StudentID) REFERENCES Student(StudentID),
+                    FOREIGN KEY (CourseID) REFERENCES Course(CourseID)
+                )";
+
+                SQLiteCommand cmd = new SQLiteCommand(createTableQuery, conn);
+                cmd.ExecuteNonQuery();
+
+                conn.Close();
+            }
+        }
+
+        private void LoadCourses()
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                string query = "SELECT CourseID, CourseTitle FROM Course ORDER BY CourseTitle ASC";
+                SQLiteDataAdapter da = new SQLiteDataAdapter(query, conn);
+                DataTable dt = new DataTable();
+                da.Fill(dt);
+
+                if (dt.Rows.Count == 0)
+                {
+                    MessageBox.Show("Dersler veritabanında bulunamadı.");
+                }
+
+                classBox.DataSource = dt;
+                classBox.DisplayMember = "CourseTitle";  
+                classBox.ValueMember = "CourseID";
+            }
+
+        }
+
+        private void LoadStudents()
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                string query = "SELECT * FROM Student ORDER BY Name ASC";
+                SQLiteDataAdapter da = new SQLiteDataAdapter(query, conn);
+                DataTable dt = new DataTable();
+                da.Fill(dt);
+
+                dataGridView1.DataSource = dt;
+            }
+        }
+
+        private void LoadEnrollments()
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                string query = @"SELECT S.StudentNumber, S.Name, C.CourseTitle
+                         FROM Enrollment E
+                         JOIN Student S ON S.StudentID = E.StudentID
+                         JOIN Course C ON C.CourseID = E.CourseID";
+                SQLiteDataAdapter da = new SQLiteDataAdapter(query, conn);
+                DataTable dt = new DataTable();
+                da.Fill(dt);
+
+                dataGridView3.DataSource = dt;
+            }
+        }
+
+        private void LoadCoursesToGrid()
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                string query = "SELECT CourseID, CourseTitle FROM Course";
+                SQLiteDataAdapter da = new SQLiteDataAdapter(query, conn);
+                DataTable dt = new DataTable();
+                da.Fill(dt);
+
+                dataGridView2.DataSource = dt;
+            }
+        }
+        private void SearchStudents(string keyword)
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+                string query = @"
+            SELECT DISTINCT S.*
+            FROM Student S
+            LEFT JOIN Enrollment E ON S.StudentID = E.StudentID
+            LEFT JOIN Course C ON E.CourseID = C.CourseID
+            WHERE S.Name LIKE @keyword OR
+                  S.Surname LIKE @keyword OR
+                  S.StudentNumber LIKE @keyword OR
+                  S.Department LIKE @keyword OR
+                  C.CourseTitle LIKE @keyword";
+
+                SQLiteDataAdapter da = new SQLiteDataAdapter(query, conn);
+                da.SelectCommand.Parameters.AddWithValue("@keyword", "%" + keyword + "%");
+
+                DataTable dt = new DataTable();
+                da.Fill(dt);
+
+                dataGridView1.DataSource = dt;
+            }
+        }
+        private void SelectCourseOfStudent(string studentNumber)
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+                string query = @"
+            SELECT E.CourseID 
+            FROM Enrollment E
+            JOIN Student S ON S.StudentID = E.StudentID
+            WHERE S.StudentNumber = @StudentNumber";
+
+                SQLiteCommand cmd = new SQLiteCommand(query, conn);
+                cmd.Parameters.AddWithValue("@StudentNumber", studentNumber);
+
+                object result = cmd.ExecuteScalar();
+                if (result != null && int.TryParse(result.ToString(), out int courseId))
+                {
+                    classBox.SelectedValue = courseId;
+                }
+
+                conn.Close();
+            }
+        }
+
+        private void addButton_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(ıdText.Text) ||
+                string.IsNullOrWhiteSpace(nameText.Text) ||
+                string.IsNullOrWhiteSpace(surnameText.Text) ||
+                string.IsNullOrWhiteSpace(emailText.Text) ||
+                string.IsNullOrWhiteSpace(departmentBox.SelectedItem.ToString()) ||
+                string.IsNullOrWhiteSpace(gradeText.Text) ||
+                classBox.SelectedIndex == -1)
+            {
+                MessageBox.Show("Lütfen tüm zorunlu alanları doldurduğunuzdan emin olun ve bir ders seçin.");
+                return;
+            }
+
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+
+                string insertStudent = @"INSERT INTO Student (StudentNumber, Name, Surname, Email, Department, Grade)
+                                         VALUES (@StudentNumber, @Name, @Surname, @Email, @Department, @Grade)";
+
+                SQLiteCommand cmd1 = new SQLiteCommand(insertStudent, conn);
+                cmd1.Parameters.AddWithValue("@StudentNumber", ıdText.Text);
+                cmd1.Parameters.AddWithValue("@Name", nameText.Text);
+                cmd1.Parameters.AddWithValue("@Surname", surnameText.Text);
+                cmd1.Parameters.AddWithValue("@Email", emailText.Text);
+                cmd1.Parameters.AddWithValue("@Department", departmentBox.SelectedItem?.ToString());
+                cmd1.Parameters.AddWithValue("@Grade", gradeText.Text);
+                cmd1.ExecuteNonQuery();
+
+                string selectStudentId = "SELECT last_insert_rowid()";
+                SQLiteCommand cmd2 = new SQLiteCommand(selectStudentId, conn);
+                int studentId = Convert.ToInt32(cmd2.ExecuteScalar());
+
+                if (classBox.SelectedValue != null && int.TryParse(classBox.SelectedValue.ToString(), out int selectedCourseID))
+                {
+                    string insertEnrollment = "INSERT INTO Enrollment (StudentID, CourseID) VALUES (@StudentID, @CourseID)";
+                    SQLiteCommand cmd3 = new SQLiteCommand(insertEnrollment, conn);
+                    cmd3.Parameters.AddWithValue("@StudentID", studentId);
+                    cmd3.Parameters.AddWithValue("@CourseID", selectedCourseID);
+                    cmd3.ExecuteNonQuery();
+                }
+                else
+                {
+                    MessageBox.Show("Geçerli bir ders seçilmedi.");
+                }
+
+                conn.Close();
+            }
+
+            MessageBox.Show("Öğrenci ve kayıt eklendi.");
+            ClearForm();
+            LoadStudents();
+            LoadEnrollments();
+        }
+
+        private void updateButton_Click(object sender, EventArgs e)
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                string query = @"UPDATE Student SET 
+                                Name = @Name,
+                                Surname = @Surname,
+                                Email = @Email,
+                                Department = @Department,
+                                Grade = @Grade
+                             WHERE StudentNumber = @StudentNumber";
+
+                SQLiteCommand cmd = new SQLiteCommand(query, conn);
+                cmd.Parameters.AddWithValue("@StudentNumber", ıdText.Text);
+                cmd.Parameters.AddWithValue("@Name", nameText.Text);
+                cmd.Parameters.AddWithValue("@Surname", surnameText.Text);
+                cmd.Parameters.AddWithValue("@Email", emailText.Text);
+                cmd.Parameters.AddWithValue("@Department", departmentBox.SelectedItem?.ToString());
+                cmd.Parameters.AddWithValue("@Grade", gradeText.Text);
+
+                conn.Open();
+                cmd.ExecuteNonQuery();
+                conn.Close();
+            }
+
+            MessageBox.Show("Öğrenci güncellendi.");
+            LoadStudents();
+        }
+
+        private void deleteButton_Click(object sender, EventArgs e)
+        {
+            using (SQLiteConnection conn = new SQLiteConnection(connectionString))
+            {
+                string deleteEnrollment = @"DELETE FROM Enrollment 
+                                            WHERE StudentID = (SELECT StudentID FROM Student WHERE StudentNumber = @StudentNumber)";
+                SQLiteCommand cmd1 = new SQLiteCommand(deleteEnrollment, conn);
+                cmd1.Parameters.AddWithValue("@StudentNumber", ıdText.Text);
+
+                string deleteStudent = "DELETE FROM Student WHERE StudentNumber = @StudentNumber";
+                SQLiteCommand cmd2 = new SQLiteCommand(deleteStudent, conn);
+                cmd2.Parameters.AddWithValue("@StudentNumber", ıdText.Text);
+
+                conn.Open();
+                cmd1.ExecuteNonQuery();
+                cmd2.ExecuteNonQuery();
+                conn.Close();
+            }
+
+            MessageBox.Show("Öğrenci ve kayıtları silindi.");
+            ClearForm();
+            LoadStudents();
+            LoadEnrollments();
+        }
+
+        private void selectButton_Click(object sender, EventArgs e)
+        {
+            LoadStudents();
+            LoadCoursesToGrid();
+            LoadEnrollments();
+        }
+        private void ClearForm()
+        {
+            ıdText.Clear();
+            nameText.Clear();
+            surnameText.Clear();
+            emailText.Clear();
+            departmentBox.SelectedIndex = 0;
+            gradeText.Clear();
+            if (classBox.Items.Count > 0)
+                classBox.SelectedIndex = 0;
+        }
+
+        private void classBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+
+            if (classBox.SelectedValue != null && int.TryParse(classBox.SelectedValue.ToString(), out int selectedCourseID))
+            {
+                MessageBox.Show("Seçilen dersin CourseID'si: " + selectedCourseID);
+            }
+            else
+            {
+                MessageBox.Show("Geçerli bir ders seçilemedi.");
+            }
+        }
+
+        private void searchButton_Click(object sender, EventArgs e)
+        {
+            string keyword = searchTextBox.Text.Trim();
+            SearchStudents(keyword);
+        }
+
+        private void dataGridView1_CellDoubleClick_1(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex >= 0) 
+            {
+                DataGridViewRow row = dataGridView1.Rows[e.RowIndex];
+
+                ıdText.Text = row.Cells["StudentNumber"].Value?.ToString();
+                nameText.Text = row.Cells["Name"].Value?.ToString();
+                surnameText.Text = row.Cells["Surname"].Value?.ToString();
+                emailText.Text = row.Cells["Email"].Value?.ToString();
+                gradeText.Text = row.Cells["Grade"].Value?.ToString();
+
+                string department = row.Cells["Department"].Value?.ToString();
+                
+                if (!departmentBox.Items.Contains(department))
+                departmentBox.SelectedItem = department;
+
+                SelectCourseOfStudent(ıdText.Text);
+            }
+        }
+
+        private void dataGridView1_ColumnHeaderMouseClick(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            string columnName = dataGridView1.Columns[e.ColumnIndex].Name;
+
+            if (columnName == "Name")
+            {
+                dataGridView1.Sort(dataGridView1.Columns["Name"], ListSortDirection.Ascending);
+            }
+            else if (columnName == "StudentNumber")
+            {
+                dataGridView1.Sort(dataGridView1.Columns["StudentNumber"], ListSortDirection.Ascending);
+            }
+        }
+    }
+}
